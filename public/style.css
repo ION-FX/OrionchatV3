@@ -448,11 +448,22 @@ label.field span { font-size: 12px; font-weight: 600; color: var(--muted); lette
 .tok-k { color: var(--tok-k); font-weight: 600; }
 
 /* regenerate */
-.regen-btn {
-  border-radius: 999px; padding: 6px 16px; font-size: 12px;
-  background: var(--glass); border: 1px solid var(--stroke); color: var(--muted);
+.regen-row {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 7px; margin: 4px 0 2px;
 }
-.regen-btn:hover { color: var(--text); border-color: var(--accent); }
+.regen-btn {
+  border-radius: 999px; padding: 5px 13px; font-size: 11.5px; white-space: nowrap;
+  background: var(--glass); border: 1px solid var(--stroke); color: var(--muted);
+  transition: color .15s ease, border-color .15s ease;
+}
+.regen-btn:hover { color: var(--text); border-color: rgba(var(--accent-rgb), .6); }
+.regen-provider {
+  max-width: 230px; min-width: 130px; padding: 5px 10px; font-size: 11.5px;
+  background: var(--glass); color: var(--muted);
+  border: 1px solid var(--stroke); border-radius: 999px; outline: none; cursor: pointer;
+}
+.regen-provider:hover, .regen-provider:focus { border-color: rgba(var(--accent-rgb), .6); color: var(--text); }
 
 /* scroll-to-bottom */
 .scroll-btn {
@@ -555,15 +566,17 @@ label.field span { font-size: 12px; font-weight: 600; color: var(--muted); lette
 /* tool-call chips in chat */
 .msg-row.tool { justify-content: center; }
 .tool-chip {
-  display: inline-flex; align-items: center; gap: 8px; max-width: 80%;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid var(--stroke);
-  border-radius: 999px; padding: 5px 14px;
-  font-size: 12px; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 7px; max-width: min(72%, 560px);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px; padding: 4px 12px;
+  font-size: 11.5px; color: var(--muted);
+  cursor: default; transition: border-color .15s ease;
 }
-.tool-chip .tool-icon { font-size: 12px; }
-.tool-chip b { color: var(--accent); font-weight: 600; }
-.tool-chip .tool-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-chip:hover { border-color: rgba(var(--accent-rgb), .35); }
+.tool-chip .tool-icon { font-size: 11px; opacity: .85; }
+.tool-chip b { color: var(--accent); font-weight: 600; font-size: 11px; }
+.tool-chip .tool-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .9; }
 
 /* test lines & form feedback */
 .test-line { min-height: 15px; }
@@ -1472,9 +1485,10 @@ body.artifact-open .messages { padding-right: 0; }
   border: 1px solid var(--stroke); border-radius: 999px; padding: 1px 7px;
 }
 .model-chip {
-  font-size: 10.5px; color: var(--muted); border: 1px solid var(--stroke);
-  border-radius: 999px; padding: 1px 7px; max-width: 160px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10px; color: var(--muted); border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px; padding: 1px 7px; max-width: 150px; cursor: default;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85;
+  background: rgba(255, 255, 255, 0.03);
 }
 @media (prefers-reduced-motion: reduce) {
   .tour-card { animation: none; }
@@ -1531,3 +1545,10 @@ body.artifact-open .messages { padding-right: 0; }
 .settings-item .si-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .settings-item .si-text b { font-size: 14px; }
 .settings-item .si-arrow { margin-left: auto; color: var(--muted); font-size: 18px; flex: none; }
+
+/* update checker card in the admin panel */
+.update-card { border-color: rgba(var(--accent-rgb), .3); }
+.update-card .upd-latest { color: var(--ok); font-weight: 700; }
+.update-card.up-to-date { border-color: rgba(110, 231, 183, .3); }
+.update-card.update-ready { border-color: rgba(110, 231, 183, .55); background: rgba(110, 231, 183, .05); }
+.update-card code { font-size: 11px; background: rgba(var(--accent-rgb), .12); padding: 1px 6px; border-radius: 6px; }

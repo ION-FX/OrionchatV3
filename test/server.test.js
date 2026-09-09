@@ -89,7 +89,7 @@ test('health endpoint is public', async () => {
   const body = await res.json();
   assert.equal(res.status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.version, '1.4.0');
+  assert.equal(body.version, '1.5.0');
   assert.ok('documents' in body);
 });
 
@@ -833,7 +833,7 @@ test('message paging: after-cursor and before-cursor windows', async () => {
 
 test('system endpoint reports live vitals and mcp connections', async () => {
   const sys = (await call('GET', '/api/admin/system')).json;
-  assert.equal(sys.version, '1.4.0');
+  assert.equal(sys.version, '1.5.0');
   assert.ok(sys.uptime_s >= 0);
   assert.ok(sys.rss_mb > 0);
   assert.ok(sys.db_size_mb >= 0);
@@ -1232,7 +1232,7 @@ test('PWA assets are served with correct types and version', async () => {
   assert.ok(manifest.icons.length >= 1);
   const sw = await fetch(`${BASE}/sw.js`);
   assert.equal(sw.status, 200);
-  assert.ok((await sw.text()).includes('orionchatv3-v1.4.0'), 'service worker cache version matches the release');
+  assert.ok((await sw.text()).includes('orionchatv3-v1.5.0'), 'service worker cache version matches the release');
 });
 
 test('utility builtins execute end to end through the tool loop', async () => {
@@ -1246,6 +1246,27 @@ test('utility builtins execute end to end through the tool loop', async () => {
   const ev2 = db.prepare("SELECT tool_name, content FROM messages WHERE role='tool_event' ORDER BY id DESC LIMIT 1").get();
   assert.equal(ev2.tool_name, 'text_stats');
   assert.match(ev2.content, /characters: \d+/);
+});
+
+test('update check compares the running version against GitHub', async () => {
+  const res = await call('GET', '/api/update/check?refresh=1');
+  assert.equal(res.status, 200);
+  assert.equal(res.json.current, '1.5.0');
+  // depending on network availability the fetch either resolves or reports an error —
+  // both shapes must be coherent and never claim an update without a version
+  if (res.json.error) {
+    assert.equal(res.json.update_available, false);
+    assert.equal(res.json.latest, null);
+  } else {
+    assert.ok(res.json.latest, 'latest version reported');
+    assert.equal(res.json.update_available, res.json.latest !== '1.5.0');
+  }
+  assert.ok(res.json.release_url.includes('github.com'));
+  // unauthenticated requests are refused
+  const saved = cookie;
+  cookie = '';
+  assert.equal(((await call('GET', '/api/update/check')).status), 401);
+  cookie = saved;
 });
 
 // ---------- themes: picker registry and stylesheet palettes stay in sync ----------

@@ -401,22 +401,24 @@ function renderMessages(msgs) {
   renderOutline(visible);
   updateExportVisibility();
   // regenerate affordance under the final assistant reply, with a
-  // "retry with another model" picker
+  // "retry with another model" picker — one compact centered row
   const last = visible[visible.length - 1];
   if (last?.role === 'assistant' && activeConv && !sending) {
     const regenRow = document.createElement('div');
-    regenRow.className = 'msg-row tool';
+    regenRow.className = 'regen-row';
     const btn = document.createElement('button');
     btn.className = 'regen-btn';
-    btn.textContent = '↻ Regenerate reply';
+    btn.textContent = '↻ Regenerate';
+    btn.title = 'Answer the last message again';
     btn.onclick = () => send(true, activeConv);
     const sel = document.createElement('select');
     sel.className = 'regen-provider';
-    sel.title = 'Retry with a different model';
-    sel.innerHTML = `<option value="">with same model</option>` + buildProviderOptions();
+    sel.title = 'Model to retry with';
+    sel.innerHTML = `<option value="">same model</option>` + buildProviderOptions();
     const retry = document.createElement('button');
     retry.className = 'regen-btn';
-    retry.textContent = '↻ Retry with…';
+    retry.textContent = '↻ Retry';
+    retry.title = 'Regenerate using the selected model';
     retry.onclick = () => send(true, activeConv, sel.value || null);
     regenRow.append(btn, sel, retry);
     box.appendChild(regenRow);
@@ -437,6 +439,7 @@ function toolEventRow(name, content) {
   row.className = 'msg-row tool';
   const chip = document.createElement('div');
   chip.className = 'tool-chip';
+  chip.title = `${name}\n\n${String(content || '').replace(/\n⏱\s*\d+\s*ms$/, '')}`; // full result on hover
   const dur = String(content || '').match(/⏱\s*(\d+)\s*ms$/);
   const body = String(content || '').replace(/\n⏱\s*\d+\s*ms$/, '');
   const preview = body.replace(/\s+/g, ' ').slice(0, 90);
@@ -445,6 +448,14 @@ function toolEventRow(name, content) {
     `<span class="tool-result">${esc(preview)}${body.length > 90 ? '…' : ''}</span>`;
   row.appendChild(chip);
   return row;
+}
+
+// "inclusional//ling-3.0-flash-fix" → "ling-3.0-flash-fix"
+function shortModelName(m) {
+  const s = String(m || '');
+  const t = s.includes('//') ? s.slice(s.indexOf('//') + 2) : s;
+  const base = t.includes('/') ? t.slice(t.lastIndexOf('/') + 1) : t;
+  return base.length > 18 ? base.slice(0, 17) + '…' : base;
 }
 
 function fmtTok(n) {
@@ -501,12 +512,12 @@ function messageRow(role, htmlContent, createdAt, isHtml, raw, msg = null) {
     chip.textContent = `Σ ${fmtTok(Number(msg.prompt_tokens) + Number(msg.completion_tokens))}`;
     meta.appendChild(chip);
   }
-  // model attribution on assistant replies
+  // model attribution on assistant replies (short display, full name on hover)
   if (role === 'assistant' && msg?.model) {
     const chip = document.createElement('span');
     chip.className = 'model-chip';
-    chip.title = 'model that produced this reply';
-    chip.textContent = msg.model;
+    chip.title = `model: ${msg.model}`;
+    chip.textContent = shortModelName(msg.model);
     meta.appendChild(chip);
   }
   addBtn('Copy', '⧉', async () => {
@@ -1093,6 +1104,11 @@ async function openAdmin() {
   openModal(`
     <h2>⚙️ Admin</h2>
     <p class="muted small" id="adm-stats">${counts.conversations} chats · ${counts.messages} messages · ${counts.memories} memories · ${users.length} users</p>
+    <div class="card update-card" id="update-card">
+      <div class="row"><b>⟳ Updates</b>
+        <span id="upd-status" class="small muted">checking GitHub…</span>
+        <button id="upd-refresh" style="margin-left:auto">check now</button></div>
+    </div>
     <div class="row">
       <button id="export-data">⬇ Export all data (JSON)</button>
       <span class="muted small">Full database dump: users (without passwords), providers, chats, memories.</span>
@@ -1224,6 +1240,33 @@ async function openAdmin() {
   renderUsersSection();
   renderStats();
   wireAdminForms();
+  checkUpdates(false);
+}
+
+// version check against the GitHub repo (server caches the answer for an hour)
+async function checkUpdates(refresh) {
+  const line = $('upd-status');
+  if (!line) return;
+  line.textContent = 'checking GitHub…';
+  line.className = 'small muted';
+  try {
+    const u = await api('GET', `/api/update/check${refresh ? '?refresh=1' : ''}`);
+    const card = $('update-card');
+    if (u.update_available) {
+      card.classList.add('update-ready');
+      line.innerHTML = `🆕 <b class="upd-latest">v${esc(u.latest)} available</b> — running v${esc(u.current)} ·
+        <a href="${esc(u.release_url)}" target="_blank" rel="noopener">see what's new</a> ·
+        to apply: <code>git pull</code> then restart the server`;
+    } else if (u.error) {
+      card.classList.add('up-to-date');
+      line.innerHTML = `⚠️ couldn't reach GitHub (${esc(u.error)}) — running v${esc(u.current)}`;
+    } else {
+      card.classList.add('up-to-date');
+      line.innerHTML = `✓ up to date — running v${esc(u.current)}`;
+    }
+  } catch (e) {
+    line.textContent = `⚠️ ${e.message}`;
+  }
 }
 
 function renderPlatformSection() {
@@ -1793,6 +1836,7 @@ function wireAdminForms() {
   };
   $('backup-refresh').onclick = renderBackupList;
   renderBackupList();
+  $('upd-refresh').onclick = () => checkUpdates(true);
   const loadAuditFn = async () => {
     const box = $('audit-list');
     const action = $('audit-filter').value.trim();

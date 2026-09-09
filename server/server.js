@@ -12,6 +12,11 @@ const ROOT = path.join(__dirname, '..');
 const DATA_DIR = process.env.ORION_DATA_DIR || path.join(ROOT, 'data');
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
+// running version — keep in sync with the VERSION file in the repo root;
+// the update checker compares this against GitHub
+const APP_VERSION = '1.5.0';
+const GITHUB_REPO = 'ION-FX/OrionchatV3';
+
 const db = new DatabaseSync(path.join(DATA_DIR, 'orionchat.db'));
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -1488,6 +1493,20 @@ async function route(req, res, url) {
 //           DELETE /api/admin/providers /mcp_servers /personas /backup ·
 //           GET /api/admin/backup(+/download)
 // openai    GET /v1/models · POST /v1/chat/completions
+// ---------- update check helpers ----------
+// true when candidate (repo VERSION) is a newer semver than current
+function isNewerVersion(candidate, current) {
+  const a = String(candidate || '').replace(/^v/, '').split(/[.\-]/).map((n) => parseInt(n, 10) || 0);
+  const b = String(current || '').replace(/^v/, '').split(/[.\-]/).map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) > (b[i] || 0)) return true;
+    if ((a[i] || 0) < (b[i] || 0)) return false;
+  }
+  return false;
+}
+// one cached GitHub answer shared by all admins; refreshed at most hourly
+let updateCache = { at: 0, latest: null, error: null };
+
 const routes = {
   // ---- auth ----
   'POST /api/register': async (req, res) => {
@@ -2258,7 +2277,7 @@ const routes = {
   'GET /api/health': async (req, res) => {
     send(res, 200, {
       ok: true,
-      version: '1.4.0',
+      version: APP_VERSION,
       uptime_s: Math.round(process.uptime()),
       users: db.prepare('SELECT COUNT(*) c FROM users').get().c,
       conversations: db.prepare('SELECT COUNT(*) c FROM conversations').get().c,
@@ -2651,7 +2670,7 @@ const routes = {
     const dbPages = db.prepare('PRAGMA page_count').get().page_count;
     const pageSize = db.prepare('PRAGMA page_size').get().page_size;
     send(res, 200, {
-      version: '1.4.0',
+      version: APP_VERSION,
       node: process.version,
       platform: `${process.platform}/${process.arch}`,
       uptime_s: Math.round(process.uptime()),
@@ -2723,6 +2742,34 @@ const routes = {
     if (existsSync(fp)) unlinkSync(fp);
     audit(me.id, me.username, 'backup_deleted', name);
     send(res, 200, { ok: true });
+  },
+
+  // ---- update check: compare the running version with the GitHub repo ----
+  'GET /api/update/check': async (req, res, url) => {
+    requireAdmin(req);
+    const ttl = url.searchParams.get('refresh') ? -1 : 3600e3; // cache the GitHub answer for an hour
+    if (Date.now() - updateCache.at > ttl) {
+      try {
+        const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/VERSION`, {
+          headers: { 'User-Agent': `OrionChatV3/${APP_VERSION}`, Accept: 'application/vnd.github+json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) throw new Error(`GitHub HTTP ${r.status}`);
+        const j = await r.json();
+        const latest = Buffer.from(j.content || '', 'base64').toString('utf8').trim();
+        updateCache = { at: Date.now(), latest, error: null };
+      } catch (e) {
+        updateCache = { at: Date.now(), latest: null, error: e.message };
+      }
+    }
+    send(res, 200, {
+      current: APP_VERSION,
+      latest: updateCache.latest,
+      update_available: updateCache.latest ? isNewerVersion(updateCache.latest, APP_VERSION) : false,
+      error: updateCache.error,
+      checked_at: updateCache.at ? new Date(updateCache.at).toISOString() : null,
+      release_url: `https://github.com/${GITHUB_REPO}`,
+    });
   },
 
   // ---- audit trail + analytics ----
