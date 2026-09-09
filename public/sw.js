@@ -1,7 +1,7 @@
 // OrionChatV3 service worker — offline shell for the static frontend only.
 // /api/* and /v1/* always go to the network (never cached); navigation falls
 // back to the cached index when the network is unreachable.
-const VERSION = 'orionchatv3-v1.5.0';
+const VERSION = 'orionchatv3-v1.6.0';
 const SHELL = [
   '/',
   '/index.html',

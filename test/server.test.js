@@ -89,7 +89,7 @@ test('health endpoint is public', async () => {
   const body = await res.json();
   assert.equal(res.status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.version, '1.5.0');
+  assert.equal(body.version, '1.6.0');
   assert.ok('documents' in body);
 });
 
@@ -833,7 +833,7 @@ test('message paging: after-cursor and before-cursor windows', async () => {
 
 test('system endpoint reports live vitals and mcp connections', async () => {
   const sys = (await call('GET', '/api/admin/system')).json;
-  assert.equal(sys.version, '1.5.0');
+  assert.equal(sys.version, '1.6.0');
   assert.ok(sys.uptime_s >= 0);
   assert.ok(sys.rss_mb > 0);
   assert.ok(sys.db_size_mb >= 0);
@@ -1232,7 +1232,7 @@ test('PWA assets are served with correct types and version', async () => {
   assert.ok(manifest.icons.length >= 1);
   const sw = await fetch(`${BASE}/sw.js`);
   assert.equal(sw.status, 200);
-  assert.ok((await sw.text()).includes('orionchatv3-v1.5.0'), 'service worker cache version matches the release');
+  assert.ok((await sw.text()).includes('orionchatv3-v1.6.0'), 'service worker cache version matches the release');
 });
 
 test('utility builtins execute end to end through the tool loop', async () => {
@@ -1251,7 +1251,7 @@ test('utility builtins execute end to end through the tool loop', async () => {
 test('update check compares the running version against GitHub', async () => {
   const res = await call('GET', '/api/update/check?refresh=1');
   assert.equal(res.status, 200);
-  assert.equal(res.json.current, '1.5.0');
+  assert.equal(res.json.current, '1.6.0');
   // depending on network availability the fetch either resolves or reports an error —
   // both shapes must be coherent and never claim an update without a version
   if (res.json.error) {
@@ -1259,7 +1259,18 @@ test('update check compares the running version against GitHub', async () => {
     assert.equal(res.json.latest, null);
   } else {
     assert.ok(res.json.latest, 'latest version reported');
-    assert.equal(res.json.update_available, res.json.latest !== '1.5.0');
+    // update_available must follow real semver ordering, not inequality —
+    // mid-release GitHub can legitimately lag behind the running version
+    const seg = (v) => String(v).replace(/^v/, '').split(/[.\-]/).map((n) => parseInt(n, 10) || 0);
+    const newer = (a, b) => {
+      const x = seg(a), y = seg(b);
+      for (let i = 0; i < Math.max(x.length, y.length); i++) {
+        if ((x[i] || 0) > (y[i] || 0)) return true;
+        if ((x[i] || 0) < (y[i] || 0)) return false;
+      }
+      return false;
+    };
+    assert.equal(res.json.update_available, newer(res.json.latest, res.json.current));
   }
   assert.ok(res.json.release_url.includes('github.com'));
   // unauthenticated requests are refused
@@ -1267,6 +1278,51 @@ test('update check compares the running version against GitHub', async () => {
   cookie = '';
   assert.equal(((await call('GET', '/api/update/check')).status), 401);
   cookie = saved;
+});
+
+test('update apply fast-forwards only when a newer version exists on GitHub', async () => {
+  // unauthenticated requests are refused
+  const saved = cookie;
+  cookie = '';
+  assert.equal(((await call('POST', '/api/update/apply')).status), 401);
+  cookie = saved;
+  const res = await call('POST', '/api/update/apply');
+  // shape depends on checkout state: a dirty tree is refused, a clean tree that is
+  // already at the latest VERSION answers updated:false — both are valid outcomes
+  if (res.status === 400) {
+    assert.match(res.json.error, /local changes|not a git checkout/);
+  } else {
+    assert.equal(res.status, 200);
+    assert.equal(res.json.ok, true);
+    assert.equal(res.json.updated, false, 'same VERSION on both sides must not pull');
+  }
+});
+
+test('server restart is confirm-gated and admin-only', async () => {
+  const saved = cookie;
+  cookie = '';
+  assert.equal(((await call('POST', '/api/admin/restart', { confirm: true })).status), 401);
+  cookie = saved;
+  // without confirm the server must answer and keep running
+  const res = await call('POST', '/api/admin/restart', {});
+  assert.equal(res.status, 400);
+  assert.equal(res.json.need_confirm, true);
+  const health = await fetch(`${BASE}/api/health`).then((r) => r.json());
+  assert.equal(health.ok, true, 'server still alive after a refused restart');
+});
+
+test('web_search builtin runs through the tool loop and degrades gracefully', async () => {
+  // registration check: listed with the other builtin tools for admins
+  const overview = await call('GET', '/api/admin/overview');
+  const listed = overview.json.builtin_tools?.some((t) => t.id === 'web_search');
+  assert.ok(listed, 'web_search should be offered to models as a builtin');
+  // live call: whatever DuckDuckGo answers, the loop must survive —
+  // results, a "no results" note, or a graceful tool error string
+  const res = await call('POST', '/api/chat', { message: 'FORCE_TOOL:web_search orion chat project', provider_id: providerId });
+  assert.equal(res.json.reply, 'MOCK-AFTER-TOOL');
+  const ev = db.prepare("SELECT tool_name, content FROM messages WHERE role='tool_event' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(ev.tool_name, 'web_search');
+  assert.ok(ev.content && ev.content.length > 0, 'web_search produced a transcript entry');
 });
 
 // ---------- themes: picker registry and stylesheet palettes stay in sync ----------

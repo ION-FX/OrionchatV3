@@ -5,7 +5,11 @@ import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafe
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { execFile as execFileCb, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { McpServer, HttpMcp } from './mcp.js';
+
+const execFile = promisify(execFileCb);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -14,7 +18,7 @@ if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 // running version — keep in sync with the VERSION file in the repo root;
 // the update checker compares this against GitHub
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const GITHUB_REPO = 'ION-FX/OrionchatV3';
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'orionchat.db'));
@@ -588,6 +592,51 @@ const BUILTIN_TOOLS = {
         text = htmlToText(text);
       }
       return `HTTP ${res.status}\n` + text.slice(0, 20000);
+    },
+  },
+  web_search: {
+    description: 'Search the public web (DuckDuckGo) and return the top results as title / URL / snippet blocks. Use web_fetch on a result URL to read the full page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query' },
+        count: { type: 'number', description: 'How many results (1-8, default 5)' },
+      },
+      required: ['query'],
+    },
+    run: async (args) => {
+      const query = String(args.query || '').trim();
+      if (!query) throw new Error('query must not be empty');
+      const n = Math.min(8, Math.max(1, Number(args.count) || 5));
+      const res = await fetch('https://html.duckduckgo.com/html/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0',
+        },
+        body: new URLSearchParams({ q: query }).toString(),
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error(`DuckDuckGo returned HTTP ${res.status}`);
+      const html = await res.text();
+      // results look like: <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=<encoded-url>&amp;rut=...">Title</a>
+      const items = [];
+      const re = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+      for (const m of html.matchAll(re)) {
+        let href = m[1].replace(/&amp;/g, '&');
+        const uddg = href.match(/[?&]uddg=([^&]+)/);
+        if (uddg) href = decodeURIComponent(uddg[1]);
+        else if (href.startsWith('//')) href = `https:${href}`;
+        const title = htmlToText(m[2]).trim();
+        if (!title || !/^https?:\/\//.test(href)) continue;
+        items.push({ title, url: href });
+        if (items.length >= n) break;
+      }
+      if (!items.length) return `No results found for: ${query}`;
+      // snippets follow each result link; pair them up where present
+      const snips = [...html.matchAll(/<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => htmlToText(m[1]).trim());
+      return items.map((it, i) => `${i + 1}. ${it.title}\n   ${it.url}${snips[i] ? `\n   ${snips[i].slice(0, 300)}` : ''}`).join('\n\n');
     },
   },
   random_number: {
@@ -2772,6 +2821,63 @@ const routes = {
     });
   },
 
+  // ---- one-click update: fast-forward the checkout to the latest GitHub main ----
+  'POST /api/update/apply': async (req, res) => {
+    const me = requireAdmin(req);
+    if (!existsSync(path.join(ROOT, '.git'))) {
+      return send(res, 400, { ok: false, error: 'This deployment is not a git checkout — update by downloading the repo manually.' });
+    }
+    const git = (args) => execFile('git', args, { cwd: ROOT, timeout: 30000, encoding: 'utf8' }).then((r) => r.stdout.trim());
+    try {
+      // refuse to touch a checkout with uncommitted changes (data/ is gitignored, so user data never shows up here)
+      const status = await git(['status', '--porcelain']);
+      if (status) return send(res, 400, { ok: false, error: `Working tree has local changes — resolve them first:\n${status.slice(0, 500)}` });
+      const refresh = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/VERSION`, {
+        headers: { 'User-Agent': `OrionChatV3/${APP_VERSION}`, Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!refresh.ok) throw new Error(`GitHub HTTP ${refresh.status}`);
+      const latest = Buffer.from((await refresh.json()).content || '', 'base64').toString('utf8').trim();
+      if (!isNewerVersion(latest, APP_VERSION)) return send(res, 200, { ok: true, updated: false, current: APP_VERSION, latest, message: 'Already up to date.' });
+      await git(['fetch', 'origin', 'main']);
+      const head = await git(['rev-parse', 'HEAD']);
+      const incoming = await git(['rev-parse', 'FETCH_HEAD']);
+      if (head === incoming) return send(res, 200, { ok: true, updated: false, current: APP_VERSION, latest, message: 'Already up to date.' });
+      await git(['merge', '--ff-only', 'FETCH_HEAD']);
+      updateCache = { at: Date.now(), latest, error: null };
+      const applied = existsSync(path.join(ROOT, 'VERSION')) ? readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim() : latest;
+      audit(me.id, me.username, 'update_applied', `${APP_VERSION} -> ${applied}`);
+      send(res, 200, { ok: true, updated: true, from: APP_VERSION, to: applied, restart_required: true, message: `Updated to v${applied} — restart the server to load the new code.` });
+    } catch (e) {
+      send(res, 502, { ok: false, error: `Update failed: ${e.message}` });
+    }
+  },
+
+  // ---- restart the server in place (spawns a fresh detached copy, then exits gracefully) ----
+  'POST /api/admin/restart': async (req, res) => {
+    const me = requireAdmin(req);
+    const b = await readBody(req);
+    if (!b.confirm) {
+      return send(res, 400, { ok: false, need_confirm: true, error: 'Send {"confirm":true} to restart. In-flight chats are given up to 3s to finish.' });
+    }
+    audit(me.id, me.username, 'server_restart', APP_VERSION);
+    send(res, 200, { ok: true, restarting: true, message: 'Server is restarting — reload in a few seconds.' });
+    setTimeout(() => {
+      try {
+        const child = spawn(process.execPath, process.argv.slice(1), {
+          detached: true,
+          stdio: 'ignore',
+          env: { ...process.env, ORION_RESPAWN: '1' },
+        });
+        child.unref();
+        console.log(`Restart requested by admin — respawning as pid ${child.pid}`);
+      } catch (e) {
+        console.error('Respawn failed, exiting anyway:', e.message);
+      }
+      shutdown('RESTART');
+    }, 300);
+  },
+
   // ---- audit trail + analytics ----
   'GET /api/admin/audit': async (req, res, url) => {
     requireAdmin(req);
@@ -3042,8 +3148,17 @@ function shutdown(signal) {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-server.listen(PORT, HOST, () => {
-  const lan = Object.values(os.networkInterfaces()).flat()
-    .find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
-  console.log(`OrionChatV3 running at http://${HOST}:${PORT}${lan ? ` (LAN: http://${lan}:${PORT})` : ''} — first registered user becomes admin.`);
+function listen(retries) {
+  server.listen(PORT, HOST, () => {
+    const lan = Object.values(os.networkInterfaces()).flat()
+      .find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
+    console.log(`OrionChatV3 running at http://${HOST}:${PORT}${lan ? ` (LAN: http://${lan}:${PORT})` : ''} — first registered user becomes admin.`);
+  });
+}
+// after a self-restart the old process may still be draining for a moment — wait for the port
+let listenRetries = process.env.ORION_RESPAWN ? 25 : 0;
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE' && listenRetries > 0) { listenRetries--; setTimeout(() => listen(0), 400); }
+  else { console.error(`Cannot listen on ${HOST}:${PORT}:`, e.message); process.exit(1); }
 });
+listen(0);

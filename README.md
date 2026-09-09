@@ -86,7 +86,7 @@ The suite spawns the real server on an isolated data directory plus three mock h
 - **OpenAI-compatible endpoint** — `POST /v1/chat/completions` (streaming included) and `GET /v1/models` let any OpenAI SDK talk to your OrionChatV3 models via `model: orion-<providerId>` (shared pool) or `orion-u<id>` (personal).
 - **Data ownership** — one-click export of everything belonging to you (chats, attachments, prompts, memories, documents, projects) as JSON.
 - **Health & ops** — `GET /api/health` reports version and row counts; admins can export the entire database (minus password hashes) as JSON.
-- **Update checker** — the admin panel compares the running version against this repository (cached for an hour) and tells you when a newer `VERSION` is on GitHub, with the update steps inline (`git pull` + restart).
+- **Update checker + one-click self-update** — the admin panel compares the running version against this repository (cached for an hour). When a newer `VERSION` is on GitHub, **⬇ Update now** fast-forwards the git checkout (`fetch` + `merge --ff-only`, refusing dirty trees), restarts the server in place (graceful drain → detached respawn → port-retry), and reloads the app once the new process answers. A **↻ restart** button covers manual `git pull` too.
 
 ## API quick reference
 

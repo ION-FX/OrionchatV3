@@ -1552,3 +1552,5 @@ body.artifact-open .messages { padding-right: 0; }
 .update-card.up-to-date { border-color: rgba(110, 231, 183, .3); }
 .update-card.update-ready { border-color: rgba(110, 231, 183, .55); background: rgba(110, 231, 183, .05); }
 .update-card code { font-size: 11px; background: rgba(var(--accent-rgb), .12); padding: 1px 6px; border-radius: 6px; }
+.ghost-btn { background: transparent; opacity: .75; }
+.ghost-btn:hover { opacity: 1; }

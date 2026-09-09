@@ -1107,7 +1107,10 @@ async function openAdmin() {
     <div class="card update-card" id="update-card">
       <div class="row"><b>⟳ Updates</b>
         <span id="upd-status" class="small muted">checking GitHub…</span>
-        <button id="upd-refresh" style="margin-left:auto">check now</button></div>
+        <span id="upd-actions" class="row" style="margin-left:auto;gap:7px">
+          <button id="upd-refresh">check now</button>
+          <button id="upd-restart" class="ghost-btn" title="Restart the server in place (after a manual git pull)">↻ restart</button>
+        </span></div>
     </div>
     <div class="row">
       <button id="export-data">⬇ Export all data (JSON)</button>
@@ -1252,20 +1255,56 @@ async function checkUpdates(refresh) {
   try {
     const u = await api('GET', `/api/update/check${refresh ? '?refresh=1' : ''}`);
     const card = $('update-card');
+    card.classList.remove('update-ready', 'up-to-date');
     if (u.update_available) {
       card.classList.add('update-ready');
       line.innerHTML = `🆕 <b class="upd-latest">v${esc(u.latest)} available</b> — running v${esc(u.current)} ·
-        <a href="${esc(u.release_url)}" target="_blank" rel="noopener">see what's new</a> ·
-        to apply: <code>git pull</code> then restart the server`;
-    } else if (u.error) {
-      card.classList.add('up-to-date');
-      line.innerHTML = `⚠️ couldn't reach GitHub (${esc(u.error)}) — running v${esc(u.current)}`;
+        <a href="${esc(u.release_url)}" target="_blank" rel="noopener">see what's new</a>`;
+      const actions = $('upd-actions');
+      if (actions && !$('upd-apply')) {
+        const apply = document.createElement('button');
+        apply.id = 'upd-apply';
+        apply.textContent = '⬇ Update now';
+        apply.onclick = applyUpdate;
+        actions.prepend(apply);
+      }
     } else {
-      card.classList.add('up-to-date');
-      line.innerHTML = `✓ up to date — running v${esc(u.current)}`;
+      card.classList.add(u.error ? 'up-to-date' : 'up-to-date');
+      $('upd-apply')?.remove();
+      if (u.error) line.innerHTML = `⚠️ couldn't reach GitHub (${esc(u.error)}) — running v${esc(u.current)}`;
+      else line.innerHTML = `✓ up to date — running v${esc(u.current)}`;
     }
   } catch (e) {
     line.textContent = `⚠️ ${e.message}`;
+  }
+}
+// one-click update: server fast-forwards its git checkout, then restarts itself;
+// we poll /api/health until the new process answers, then reload the page
+async function applyUpdate() {
+  const line = $('upd-status');
+  const apply = $('upd-apply');
+  const stop = () => { apply.disabled = false; apply.textContent = '⬇ Update now'; };
+  apply.disabled = true;
+  apply.textContent = 'updating…';
+  try {
+    const r = await api('POST', '/api/update/apply');
+    if (!r.updated) { line.innerHTML = `✓ ${esc(r.message || 'Already up to date.')}`; stop(); return; }
+    line.innerHTML = `✓ updated to <b class="upd-latest">v${esc(r.to)}</b> — restarting server…`;
+    apply.textContent = 'restarting…';
+    try { await api('POST', '/api/admin/restart', { confirm: true }); } catch {}
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      await new Promise((ok) => setTimeout(ok, 1500));
+      try {
+        const h = await fetch('/api/health').then((x) => x.json());
+        if (h.ok) break;
+      } catch {}
+    }
+    line.innerHTML = `✓ server restarted — reloading…`;
+    setTimeout(() => location.reload(), 800);
+  } catch (e) {
+    line.innerHTML = `⚠️ ${esc(e.message)} — you can <code>git pull</code> manually and use ↻ restart`;
+    stop();
   }
 }
 
@@ -1837,6 +1876,20 @@ function wireAdminForms() {
   $('backup-refresh').onclick = renderBackupList;
   renderBackupList();
   $('upd-refresh').onclick = () => checkUpdates(true);
+  $('upd-restart').onclick = async () => {
+    if (!confirm('Restart the server now? In-flight replies are cut off (up to 3s to finish).')) return;
+    const line = $('upd-status');
+    try {
+      line.textContent = 'restarting server…';
+      await api('POST', '/api/admin/restart', { confirm: true });
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        await new Promise((ok) => setTimeout(ok, 1500));
+        try { if ((await fetch('/api/health').then((x) => x.json())).ok) break; } catch {}
+      }
+      location.reload();
+    } catch (e) { line.textContent = `⚠️ ${e.message}`; }
+  };
   const loadAuditFn = async () => {
     const box = $('audit-list');
     const action = $('audit-filter').value.trim();
