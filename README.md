@@ -2,6 +2,8 @@
 
 A self-hosted chat for AIs (and humans) with streaming, tool calling, custom MCP servers, a per-user knowledge base, memory, and deep admin controls. **Zero dependencies** — runs on plain Node.js ≥ 22 (built-in `node:sqlite`, `node:http`, `node:crypto`). No npm install, no build step, no framework.
 
+![OrionChatV3 — the main chat view with the Orion theme, sidebar chat history and tool badge](docs/screenshot.png)
+
 ## Run
 
 ```bash
