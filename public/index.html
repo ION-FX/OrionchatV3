@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0714">
+<meta name="description" content="OrionChatV3 — self-hosted chat for AIs & humans. Tools, MCP servers, memory, knowledge base. Zero dependencies.">
+<title>OrionChatV3</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/logo.png" type="image/png">
+<link rel="apple-touch-icon" href="/logo.png">
+<link rel="manifest" href="/manifest.webmanifest">
+</head>
+<body>
+<a href="#messages" class="skip-link">Skip to conversation</a>
+
+<div id="auth-view" class="auth-wrap hidden">
+  <div class="auth-glow g1"></div><div class="auth-glow g2"></div>
+  <div class="auth-card">
+    <img class="brand-mark" src="/logo.png" alt="OrionChatV3" width="72" height="72">
+    <h1>OrionChatV3</h1>
+    <p class="muted">Chat for AIs &amp; humans — tools, MCP servers, memory.</p>
+    <div class="seg"><button id="tab-login" class="active">Log in</button><button id="tab-register">Register</button></div>
+    <label class="field"><span>Username</span>
+      <input id="auth-username" placeholder="ada" autocomplete="username"></label>
+    <label class="field"><span>Password</span>
+      <input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password"></label>
+    <input id="auth-totp" class="hidden field-totp" placeholder="6-digit authenticator code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+    <button id="auth-submit" class="primary wide">Log in</button>
+    <p id="auth-msg" class="msg"></p>
+    <p class="muted small center">First registered account becomes admin.</p>
+  </div>
+</div>
+
+<div id="app-view" class="app hidden">
+  <div class="nebula n1"></div><div class="nebula n2"></div><div class="nebula n3"></div>
+  <aside class="sidebar">
+    <div class="brand"><img class="brand-logo" src="/logo.png" alt="" width="26" height="26"> <span class="brand-text">OrionChatV3</span></div>
+    <button id="new-chat" class="primary wide"><span class="plus">＋</span> New chat</button>
+    <input id="conv-search" placeholder="Search chats & messages…" class="conv-search" aria-label="Search chats and messages">
+    <div id="search-results" class="hidden"></div>
+    <div class="conv-tabs">
+      <button id="tab-active-chats" class="active">Chats</button>
+      <button id="tab-archived">Archived</button>
+    </div>
+    <div id="projects-strip" class="projects-strip"></div>
+    <div class="side-label">Chats</div>
+    <div id="conv-list"></div>
+    <div class="sidebar-footer">
+      <button id="show-settings" class="side-btn">⚙️ <span>Settings</span></button>
+      <!-- panel triggers: kept as hidden buttons so every panel (and its
+           refresh-by-reopen behavior) keeps working from the Settings menu -->
+      <div id="panel-triggers" class="hidden">
+        <button id="show-documents" class="side-btn">🗂 <span>Documents</span></button>
+        <button id="show-myproviders" class="side-btn">🧩 <span>My providers</span></button>
+        <button id="show-tasks" class="side-btn">⏰ <span>Reminders</span></button>
+        <button id="show-starred" class="side-btn">⭐ <span>Starred</span></button>
+        <button id="show-usage" class="side-btn">📊 <span>My usage</span></button>
+        <button id="show-usermcp" class="side-btn">🔌 <span>My tools</span></button>
+        <button id="show-prompts" class="side-btn">💡 <span>Prompts</span></button>
+        <button id="show-memories" class="side-btn">🧠 <span>Memories</span></button>
+        <button id="show-instructions" class="side-btn">📝 <span>Instructions</span></button>
+        <button id="show-account" class="side-btn">👤 <span>Account &amp; data</span></button>
+        <button id="show-admin" class="side-btn hidden">⚙️ <span>Admin</span></button>
+      </div>
+      <div class="user-chip">
+        <div class="avatar small" id="whoami-avatar">A</div>
+        <div class="who"><b id="whoami-name"></b><span id="whoami-role" class="muted small"></span></div>
+        <button id="logout" class="icon-btn" title="Log out">⏻</button>
+      </div>
+    </div>
+  </aside>
+  <div id="side-backdrop" class="side-backdrop"></div>
+
+  <main class="chat">
+    <header class="chat-header">
+      <div class="header-title">
+        <button id="menu-btn" class="icon-ish menu-btn" title="Chats" aria-label="Toggle chat list">☰</button>
+        <span class="spark">✦</span>
+        <select id="provider-select"></select>
+      </div>
+      <span class="header-actions">
+        <button id="theme-btn" class="icon-ish" title="Theme gallery" aria-label="Theme gallery" aria-haspopup="menu">🎨</button>
+        <div id="theme-pop" class="theme-pop hidden" role="menu" aria-label="Theme gallery"></div>
+        <button id="filter-btn" class="icon-ish hidden" title="Filter messages in this chat" aria-label="Filter messages">🔍</button>
+        <button id="conv-settings-btn" class="icon-ish hidden" title="Chat settings (persona & temperature)" aria-label="Chat settings">🎛</button>
+        <button id="share-btn" class="icon-ish hidden" title="Share read-only link" aria-label="Share read-only link">🔗</button>
+        <button id="copy-conv-btn" class="icon-ish hidden" title="Copy whole conversation as text" aria-label="Copy conversation">⧉</button>
+        <button id="export-btn" class="hidden" title="Export chat as Markdown">⬇ Export</button>
+        <span id="tools-badge" class="badge"></span>
+      </span>
+    </header>
+
+    <div id="announce-banner" class="announce hidden">
+      <span id="announce-text"></span>
+      <button id="announce-close" title="Dismiss">✕</button>
+    </div>
+
+    <div id="messages" class="messages">
+      <div id="empty-state" class="empty">
+        <div class="empty-orb">✦</div>
+        <h2>How can I help you today?</h2>
+        <p class="muted">The assistant can call tools, remember facts about you, and reach MCP servers your admin connected.</p>
+        <div class="chips">
+          <button class="chip" data-fill="Remember that I prefer TypeScript and use Arch Linux">Remember I prefer TypeScript</button>
+          <button class="chip" data-fill="What do you remember about me?">What do you know about me?</button>
+          <button class="chip" data-fill="What tools do you have available right now?">List your tools</button>
+        </div>
+      </div>
+    </div>
+
+    <button id="scroll-btn" class="scroll-btn hidden" title="Scroll to bottom">↓</button>
+
+    <div id="filter-bar" class="filter-bar hidden">
+      <input id="filter-input" placeholder="Show only messages containing…">
+      <select id="filter-role" title="filter by role">
+        <option value="all">all</option>
+        <option value="user">yours</option>
+        <option value="assistant">replies</option>
+      </select>
+      <button id="filter-clear">✕</button>
+    </div>
+    <select id="outline-select" class="outline-select hidden" title="Jump to a question in this chat"></select>
+
+    <div class="composer">
+      <div id="attach-chips" class="attach-chips"></div>
+      <div class="composer-inner">
+        <button id="attach-btn" class="attach-btn" title="Attach a file (text or image)" aria-label="Attach a file">📎</button>
+        <input type="file" id="attach-input" class="hidden" multiple
+               accept=".txt,.md,.markdown,.json,.csv,.tsv,.js,.mjs,.ts,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.sh,.yml,.yaml,.toml,.ini,.log,.xml,.html,.css,.sql,image/png,image/jpeg,image/gif,image/webp">
+        <textarea id="input" rows="1" aria-label="Message composer" placeholder="Message…  / for prompts  (Enter to send, Shift+Enter for newline)"></textarea>
+        <button id="mic-btn" class="attach-btn hidden" title="Voice input" aria-label="Voice input">🎙</button>
+        <button id="stop" class="send-btn stop hidden" title="Stop generating" aria-label="Stop generating">■</button>
+        <button id="send" class="send-btn" title="Send" aria-label="Send message">➤</button>
+        <div id="slash-pop" class="slash-pop hidden"></div>
+      </div>
+      <div class="composer-hint muted small"><span id="char-estimate"></span>OrionChatV3 can make mistakes. Verify important information. Press <b>?</b> for shortcuts.</div>
+    </div>
+  </main>
+
+  <div id="artifact-panel" class="artifact-panel hidden" aria-label="Live preview">
+    <div class="artifact-head">
+      <b id="artifact-title">Preview</b>
+      <span>
+        <button id="artifact-edit" title="Edit the code">✎</button>
+        <button id="artifact-open" title="Open in a new tab">↗</button>
+        <button id="artifact-close" title="Close preview">✕</button>
+      </span>
+    </div>
+    <textarea id="artifact-editor" class="hidden" spellcheck="false"></textarea>
+    <iframe id="artifact-frame" sandbox="allow-scripts" title="Artifact preview"></iframe>
+  </div>
+
+  <div id="modal" class="modal hidden"><div class="modal-card">
+    <button class="close" id="modal-close">✕</button>
+    <div id="modal-body"></div>
+  </div></div>
+</div>
+
+<div id="toasts" aria-live="polite" role="status"></div>
+<script src="/markdown.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

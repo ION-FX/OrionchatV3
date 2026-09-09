@@ -1,0 +1,6 @@
+# live database: accounts, password hashes, API keys, sessions, chats
+data/
+
+# local artifacts
+*.log
+.DS_Store

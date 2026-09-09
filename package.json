@@ -1,0 +1,12 @@
+{
+  "name": "orionchat",
+  "version": "1.2.0",
+  "description": "Chat for AIs: multi-provider chat with tools, MCP servers (stdio + HTTP), user memory, prompt library, and admin controls",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test test/server.test.js"
+  },
+  "engines": { "node": ">=22.3" }
+}

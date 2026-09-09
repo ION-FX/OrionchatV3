@@ -1,0 +1,19 @@
+{
+  "name": "OrionChatV3",
+  "short_name": "OrionChatV3",
+  "description": "Zero-dependency chat for AIs & humans — tools, MCP servers, memory.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0714",
+  "theme_color": "#0a0714",
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "New chat", "url": "/?new=1" }
+  ]
+}
